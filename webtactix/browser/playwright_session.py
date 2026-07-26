@@ -89,6 +89,7 @@ class PlaywrightConfig:
     headless: bool = True
     slow_mo_ms: int = 0
     viewport: Optional[dict] = None
+    cdp_url: Optional[str] = None
 
 
 class PlaywrightSession:
@@ -106,26 +107,43 @@ class PlaywrightSession:
 
     async def start(self, storage_state: Optional[Path] = None, geolocation: Any = None) -> None:
         self._pw = await async_playwright().start()
-        self._browser = await self._pw.chromium.launch(
-            headless=self.cfg.headless,
-            slow_mo=self.cfg.slow_mo_ms
-        )
+
+        if self.cfg.cdp_url:
+            self._browser = await self._pw.chromium.connect_over_cdp(self.cfg.cdp_url)
+            # When connecting over CDP, there is usually at least one context already
+            if self._browser.contexts:
+                self._context = self._browser.contexts[0]
+            else:
+                self._context = await self._browser.new_context()
+            return
 
         context_kwargs = {}
-        if storage_state is not None:
-            context_kwargs["storage_state"] = str(storage_state)
         if geolocation is not None:
             context_kwargs["geolocation"] = geolocation
         if self.cfg.viewport is not None:
             context_kwargs["viewport"] = self.cfg.viewport
 
-        self._context = await self._browser.new_context(**context_kwargs)
+        user_data_dir = "/tmp/webtactix_chrome_profile"
+        
+        self._context = await self._pw.chromium.launch_persistent_context(
+            user_data_dir=user_data_dir,
+            channel="chrome",
+            headless=self.cfg.headless,
+            slow_mo=self.cfg.slow_mo_ms,
+            args=["--disable-blink-features=AutomationControlled"],
+            ignore_default_args=["--use-mock-keychain", "--password-store=basic", "--enable-automation"],
+            **context_kwargs
+        )
 
     async def new_page(self) -> Page:
         if self._context is None:
             raise RuntimeError("Session not started")
-
-        page = await self._context.new_page()
+        
+        pages = self._context.pages
+        if pages:
+            page = pages[0]
+        else:
+            page = await self._context.new_page()
 
         async def handle_js_dialog(d: Dialog):
             print("js dialog:", d.type, d.message)
@@ -172,6 +190,32 @@ class PlaywrightSession:
 
         if step.action == ActionType.PRESS_ENTER:
             await page.keyboard.press("Enter")
+            await wait_for_page_stable(page, replay=replay)
+            return page
+
+        if step.action == ActionType.SCROLL:
+            direction = str(step.text).strip().lower() if step.text else "down"
+            amount = -1000 if direction == "up" else 1000
+            
+            # Extremely robust method for SPAs: find ALL scrollable containers and scroll them
+            scroll_script = f'''
+                () => {{
+                    let amount = {amount};
+                    let divs = document.querySelectorAll('div');
+                    for (let i = 0; i < divs.length; i++) {{
+                        let el = divs[i];
+                        if (el.scrollHeight > el.clientHeight + 10) {{
+                            let style = window.getComputedStyle(el);
+                            if (style.overflowY === 'auto' || style.overflowY === 'scroll') {{
+                                el.scrollBy(0, amount);
+                            }}
+                        }}
+                    }}
+                    window.scrollBy(0, amount);
+                }}
+            '''
+            await page.evaluate(scroll_script)
+            
             await wait_for_page_stable(page, replay=replay)
             return page
 
@@ -249,6 +293,13 @@ class PlaywrightSession:
                 except Exception as e:
                     raise Exception(
                         f"{loc} cannot be select as {step.text}, if the option visible, you should use click instead. Detailed failure reason: {e}.")
+
+            elif step.action == ActionType.HOVER:
+                try:
+                    await loc.scroll_into_view_if_needed(timeout=3000)
+                    await loc.hover(timeout=3000)
+                except Exception as e:
+                    raise Exception(f"Failed to hover over {loc}: {e}")
 
             else:
                 raise ValueError(f"Unknown action: {step.action}")

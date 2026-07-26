@@ -66,6 +66,8 @@ class ActionType(str, Enum):
     SELECT = "select"
     PRESS_ENTER = "press_enter"
     GOTO = "goto"
+    SCROLL = "scroll"
+    HOVER = "hover"
 
 
 @dataclass(frozen=False)

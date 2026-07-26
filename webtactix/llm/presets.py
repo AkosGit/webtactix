@@ -45,3 +45,28 @@ def preset_chatgpt(key_num: int = 0) -> OpenAICompatConfig:
     api_key = api_key_list[key_num % len(api_key_list)]
     model = "gpt-4o"
     return OpenAICompatConfig(base_url=base_url, api_key=api_key, model=model)
+
+
+def preset_gemini(key_num: int = 0) -> OpenAICompatConfig:
+    """
+    Google Gemini OpenAI-compatible endpoint.
+    """
+    base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    api_key_list = [
+        "",
+    ]
+    api_key = api_key_list[key_num % len(api_key_list)]
+    model = "gemini-2.0-flash-lite-001"
+    return OpenAICompatConfig(base_url=base_url, api_key=api_key, model=model)
+
+def preset_mistral(key_num: int = 0) -> OpenAICompatConfig:
+    """
+    Mistral OpenAI-compatible endpoint.
+    """
+    base_url = "https://api.mistral.ai/v1"
+    api_key_list = [
+        "",
+    ]
+    api_key = api_key_list[key_num % len(api_key_list)]
+    model = "magistral-medium-2509"
+    return OpenAICompatConfig(base_url=base_url, api_key=api_key, model=model)

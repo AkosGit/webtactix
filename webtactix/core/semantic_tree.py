@@ -52,6 +52,7 @@ class SemanticTree:
         if self._root_id is not None:
             raise RuntimeError("Root already exists.")
         self.nodes["virtual"] = SemanticNode(node_id="virtual", url="")
+        self.state["virtual"] = NodeState(url="", enc=None)
 
         rid = self.new_node_id()
         self.nodes[rid] = SemanticNode(node_id=rid, url=url)
@@ -103,7 +104,7 @@ class SemanticTree:
         for s in plan.steps:
             if s.text is None or s.text == "":
                 parts.append(f"{s.action.value}({s.role} {s.name})")
-            elif s.action == ActionType.GOTO or s.action == ActionType.PRESS_ENTER:
+            elif s.action in (ActionType.GOTO, ActionType.PRESS_ENTER, ActionType.SCROLL):
                 parts.append(f"{s.action.value} {s.text}")
             else:
                 parts.append(f"{s.action.value}({s.role} {s.name}, {s.text})")

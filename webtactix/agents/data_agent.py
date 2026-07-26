@@ -111,15 +111,22 @@ class DataExtractionAgent:
         common_hist, _ = self.tree.history_for_planner(node_id)
         for turn_idx in range(self.cfg.max_rounds):
             print('[DATA EXTRACTION] ', turn_idx)
+            print('[DBG] Waiting for page stable...')
             await wait_for_page_stable(page)
+            
+            print('[DBG] Getting snapshot...')
             cur = await self.sess.get_snapshot(page)
+            print('[DBG] Encoding snapshot...')
             enc = self.encoder.encode(cur_snapshot=cur)
+            print('[DBG] Encoded snapshot length:', len(str(enc)))
 
             # 1) LLM decides: record key info + next actions OR done with final extraction
+            print('[DBG] Calling LLM chat_json...')
             obj, usage = await self.llm.chat_json(
                 system=self._system_prompt(),
                 user=self._user_prompt(goal=goal, enc=enc, common_history=common_hist, history=hist, url=page.url),
             )
+            print('[DBG] LLM chat_json returned!')
 
             parsed = self._parse_llm(obj)
             note = parsed.get("note", "").strip()
@@ -161,6 +168,7 @@ class DataExtractionAgent:
             elif step['action'] == "wait":
                 await asyncio.sleep(30)
                 hist.append("ACTION: wait 30s for page loading")
+                action_sig = "wait 30s"
 
             elif step['action'] == "click":
                 idx = step['index']

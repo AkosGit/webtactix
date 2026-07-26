@@ -11,7 +11,7 @@ from typing import Sequence, List, Dict, Any, Optional
 from webtactix.browser.playwright_session import PlaywrightConfig, PlaywrightSession
 from webtactix.core.semantic_tree import SemanticTree
 from webtactix.llm.openai_compat import OpenAICompatClient
-from webtactix.llm.presets import preset_deepseek_chat, preset_qwen32b, preset_chatgpt
+from webtactix.llm.presets import preset_deepseek_chat, preset_qwen32b, preset_chatgpt, preset_gemini
 from webtactix.agents.planner_agent import PlannerAgent
 from webtactix.agents.decision_agent import DecisionAgent
 from webtactix.agents.constraint_agent import ConstraintAgent
@@ -45,6 +45,8 @@ def _make_llm(runner_cfg: RunnerConfig, *, key_num: int) -> OpenAICompatClient:
         llm_cfg = preset_qwen32b(key_num=key_num)
     elif runner_cfg.llm_type == "gpt-4o":
         llm_cfg = preset_chatgpt(key_num=key_num)
+    elif runner_cfg.llm_type == "gemini":
+        llm_cfg = preset_gemini(key_num=key_num)
     else:
         raise ValueError(f"Unknown llm_type: {runner_cfg.llm_type}")
     return OpenAICompatClient(llm_cfg)

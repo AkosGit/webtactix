@@ -12,7 +12,7 @@ from webtactix.agents.constraint_agent import Constraint
 from webtactix.runner.recorder import Recorder
 
 _ALLOWED_PLAN_NAMES = {"web_operation", "data_extraction", "partially_done", "go_back", "finish"}
-_ALLOWED_ACTIONS = {"click", "input", "select", "press_enter", "goto"}
+_ALLOWED_ACTIONS = {"click", "input", "select", "press_enter", "goto", "scroll", "hover"}
 
 TIPS = '''
 - Date format in shopping-admin: **Month/Day/YYYY** (e.g., "1/31/2024").\n
@@ -55,6 +55,10 @@ def _parse_action_type(s: str) -> Optional[ActionType]:
         return ActionType.PRESS_ENTER
     if s in {"goto"}:
         return ActionType.GOTO
+    if s in {"scroll"}:
+        return ActionType.SCROLL
+    if s in {"hover"}:
+        return ActionType.HOVER
     return None
 
 
@@ -129,7 +133,7 @@ class PlannerAgent:
             "    {\n"
             '      "name": "web_operation" | "data_extraction" | "partially_done" | "go_back" | "finish",\n'
             '      "goal": string,\n'
-            '      "steps": [ {"action":"click|select|input|goto|press_enter","index":int|null,"text":string|null} ]\n'
+            '      "steps": [ {"action":"click|select|input|goto|press_enter|scroll|hover","index":int|null,"text":string|null} ]\n'
             "    },\n"
             "  ]\n"
             "}\n\n"
@@ -148,6 +152,8 @@ class PlannerAgent:
             "   - If there are multiple plausible next actions on this page, you must output all alternative web_operation plans. However, when it comes to status changes, filters setting or irreversible actions such as submissions, only one plan can be output.\n"
             "   - Each web_operation plan is an action or a sequence of actions executed on the current page.\n"
             "   - For <select>, use only for elements with role 'listbox' and 'combobox', 'text' must be a visible option. For 'click|input', 'index' must be a index visible in the current 'actree'. For 'goto', leave index empty.\n"
+            "   - For <scroll>, specify direction in 'text' (e.g. 'down' or 'up'). Leave index empty.\n"
+            "   - For <hover>, specify 'index' to hover over a specific element in the current 'actree'.\n"
             "   - All actions in a plan must be directly executable on the current page state (current actree); do not include steps that require expanding/revealing UI first.\n"
             "   - <goto> is an effective operation since it does not need to interact. Try using <goto> action if you can infer the destination page's URL(http(s)://...) as an alternative way. If click a link with an url, use <goto> to reach that page.\n"
             "   - steps MUST be non-empty.\n"
@@ -158,7 +164,7 @@ class PlannerAgent:
             "   - Output exactly ONE detailed plan and the plan's goal can only contain the final information you want and mustn't contain any subjective instruction.\n"
             "3) partially_done\n"
             "   - Use this when you found important information or partially completed the task. With this type, you can compress the complex historical records into a concise completed description, along with the tasks that still need to be accomplished below.\n"
-            "   - A typical usage scenario is a multi-stage task. Once a stage is completed, the completed part can be summarized. \n"
+            "   - A typical usage scenario is a multi-stage task (e.g., accumulating data from an infinitely scrolling list where items disappear as you scroll). Once a stage is completed or a chunk of data is extracted, summarize and accumulate the data in 'goal'. \n"
             "   - When use this plan, leave step empty and write in goal, the completed part must be ground truth and cannot be changed.\n"
             "   - Example: (1) We have already obtained the xxx information, next we will xxx based on this information. (2) We have already finish book a hotel(time), next we will buy ticket before the time."
             "4) go_back\n"
@@ -281,7 +287,7 @@ class PlannerAgent:
                             return True
                         return ix < 0
 
-                    if a == ActionType.CLICK and _idx_invalid(idx_raw):
+                    if a in (ActionType.CLICK, ActionType.HOVER) and _idx_invalid(idx_raw):
                         need_goto = True
                         continue
 
@@ -311,7 +317,7 @@ class PlannerAgent:
                         text = st2.get("text", "")
                         steps.append(ActionStep(action=a, text=text, node_id=node_id))
 
-                    if a == ActionType.CLICK and not _idx_invalid(idx_raw):
+                    if a in (ActionType.CLICK, ActionType.HOVER) and not _idx_invalid(idx_raw):
                         break
 
                 if len(raw_plans) == 0:

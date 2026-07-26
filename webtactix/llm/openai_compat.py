@@ -14,7 +14,7 @@ class OpenAICompatConfig:
     api_key: str
     model: str
     temperature: float = 0.0
-    timeout_s: float = 60.0
+    timeout_s: float = 180.0
 
 
 class OpenAICompatClient:
@@ -40,18 +40,42 @@ class OpenAICompatClient:
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ]
-        for _ in range(3):
+        attempt = 0
+        while attempt < 3:
             try:
+                print(f'[DBG] Creating completions request... (Attempt {attempt+1})')
                 resp = await self._client.chat.completions.create(
                     model=model,
                     temperature=temp,
                     messages=messages,
                 )
+                print(f'[DBG] Completions request returned successfully.')
+                break
             except Exception as e:
-                print('[LLM ERR]', e)
-                continue
+                import asyncio
+                if "429" in str(e) or "rate limit" in str(e).lower():
+                    print(f"[LLM] Rate limit hit, waiting 30s...")
+                    await asyncio.sleep(30)
+                    continue  # Do not increment attempt for rate limits
+                else:
+                    attempt += 1
+                    print(f'[LLM ERR] Attempt {attempt}:', type(e).__name__, str(e))
+                    await asyncio.sleep(20)
+        else:
+            print('[DBG] Failed to get LLM response after retries')
+            raise Exception("Failed to get LLM response after retries")
 
-        output_text = (resp.choices[0].message.content or "").strip()
+        content = resp.choices[0].message.content or ""
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, dict) and "text" in item:
+                    parts.append(item["text"])
+                elif isinstance(item, str):
+                    parts.append(item)
+            output_text = "".join(parts).strip()
+        else:
+            output_text = str(content).strip()
 
         usage: Dict[str, Any] = {
             "prompt_tokens": 0,
@@ -89,21 +113,41 @@ class OpenAICompatClient:
 
     async def chat_json(self, *, system: str, user: str, temperature: Optional[float] = None) -> Tuple[
         Union[Dict[str, Any], list], Dict[str, Any]]:
-        text, usage = await self.chat_text(system=system, user=user, temperature=temperature)
+        
+        for attempt in range(3):
+            text, usage = await self.chat_text(system=system, user=user, temperature=temperature)
+    
+            s = text.strip()
+            
+            # Extract JSON block if it's wrapped in markdown
+            import re
+            m = re.search(r'```(?:json)?\s*(.*?)\s*```', s, re.DOTALL)
+            if m:
+                s = m.group(1).strip()
+            else:
+                # Fallback: try to find the outermost {} or []
+                start = s.find('{')
+                end = s.rfind('}')
+                start_arr = s.find('[')
+                end_arr = s.rfind(']')
+                
+                # Use the one that comes first (or is valid)
+                if start != -1 and end != -1 and (start_arr == -1 or start < start_arr):
+                    s = s[start:end+1]
+                elif start_arr != -1 and end_arr != -1:
+                    s = s[start_arr:end_arr+1]
 
-        s = text.strip()
-
-        # strip ```json fences
-        if s.startswith("```"):
-            lines = s.splitlines()
-            if lines and lines[0].strip().startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            s = "\n".join(lines).strip()
-
-        obj = json.loads(s)
-        if not isinstance(obj, (dict, list)):
-            raise ValueError(f"JSON root must be dict or list, got {type(obj)}")
-
-        return obj, usage
+            try:
+                import json
+                obj = json.loads(s, strict=False)
+                if not isinstance(obj, (dict, list)):
+                    raise ValueError(f"JSON root must be dict or list, got {type(obj)}")
+                return obj, usage
+            except (json.JSONDecodeError, ValueError) as e:
+                print(f"[LLM JSON ERR] Attempt {attempt + 1}: {e}\nTrying to decode:\n{s}\n")
+                if attempt == 2:
+                    raise ValueError(f"Failed to decode JSON after 3 attempts. Last error: {e}\nResponse:\n{text}")
+                
+                user += f"\n\nSystem Error on previous output: {e}. Please ensure you return ONLY valid JSON without preamble."
+                import asyncio
+                await asyncio.sleep(2)

@@ -24,7 +24,7 @@ def _action_sig_from_plan(plan: Plan) -> str:
     for s in plan.steps:
         if s.text is None or s.text == "":
             parts.append(f"{s.action.value}({s.role} {s.name})")
-        elif s.action == ActionType.GOTO or s.action == ActionType.PRESS_ENTER:
+        elif s.action in (ActionType.GOTO, ActionType.PRESS_ENTER, ActionType.SCROLL):
             parts.append(f"{s.action.value} {s.text}")
         else:
             parts.append(f"{s.action.value}({s.role} {s.name}, {s.text})")
@@ -64,6 +64,10 @@ class Executor:
         self.max_parallel = int(max_parallel)
 
     async def replay_to_node(self, *, page: Any, node_id: NodeId) -> ActionStep:
+        if node_id == "virtual":
+            print(f"[EXEC][replay] skipped for virtual node...")
+            return None
+            
         url = self.tree.get_url(node_id)
         state = self.tree.state[node_id]
         if not url:
