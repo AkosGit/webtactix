@@ -67,6 +67,7 @@ class ActionType(str, Enum):
     PRESS_ENTER = "press_enter"
     GOTO = "goto"
     SCROLL = "scroll"
+    SCROLL_N_TIMES = "scroll_n_times"
     HOVER = "hover"
 
 

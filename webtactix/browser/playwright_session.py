@@ -193,28 +193,64 @@ class PlaywrightSession:
             await wait_for_page_stable(page, replay=replay)
             return page
 
-        if step.action == ActionType.SCROLL:
-            direction = str(step.text).strip().lower() if step.text else "down"
+        if step.action in (ActionType.SCROLL, ActionType.SCROLL_N_TIMES):
+            times = 1
+            direction = "down"
+            if step.action == ActionType.SCROLL_N_TIMES:
+                try:
+                    times = int(step.text) if step.text else 1
+                except ValueError:
+                    times = 1
+            else:
+                direction = str(step.text).strip().lower() if step.text else "down"
+
             amount = -1000 if direction == "up" else 1000
             
-            # Extremely robust method for SPAs: find ALL scrollable containers and scroll them
-            scroll_script = f'''
-                () => {{
-                    let amount = {amount};
+            # Find all scrollable containers and simulate a regular human mouse wheel scroll
+            find_scrollables_script = '''
+                () => {
+                    let boxes = [];
                     let divs = document.querySelectorAll('div');
-                    for (let i = 0; i < divs.length; i++) {{
+                    for (let i = 0; i < divs.length; i++) {
                         let el = divs[i];
-                        if (el.scrollHeight > el.clientHeight + 10) {{
+                        if (el.scrollHeight > el.clientHeight + 10) {
                             let style = window.getComputedStyle(el);
-                            if (style.overflowY === 'auto' || style.overflowY === 'scroll') {{
-                                el.scrollBy(0, amount);
-                            }}
-                        }}
-                    }}
-                    window.scrollBy(0, amount);
-                }}
+                            if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
+                                let rect = el.getBoundingClientRect();
+                                if (rect.width > 0 && rect.height > 0) {
+                                    boxes.push({x: rect.x + rect.width/2, y: rect.y + rect.height/2});
+                                }
+                            }
+                        }
+                    }
+                    return boxes;
+                }
             '''
-            await page.evaluate(scroll_script)
+            boxes = await page.evaluate(find_scrollables_script)
+            
+            # Break the scroll amount into smaller steps for a "smooth" human-like scroll
+            steps = 10
+            step_amount = amount / steps
+            
+            for _t in range(times):
+                if boxes:
+                    for box in boxes:
+                        try:
+                            await page.mouse.move(box["x"], box["y"])
+                            await page.wait_for_timeout(50)
+                            for _ in range(steps):
+                                await page.mouse.wheel(0, step_amount)
+                                await page.wait_for_timeout(40)  # 40ms pause between ticks
+                        except Exception as e:
+                            print(f"[SCROLL ERR] Failed to scroll box at {box}: ", e)
+                else:
+                    # Fallback to general window scrolling if no specific container found
+                    for _ in range(steps):
+                        await page.mouse.wheel(0, step_amount)
+                        await page.wait_for_timeout(40)
+                
+                if _t < times - 1:
+                    await page.wait_for_timeout(200)
             
             await wait_for_page_stable(page, replay=replay)
             return page
@@ -516,14 +552,18 @@ async def wait_for_page_stable(
     timeout_ms: int = 10_000,
     domcontentloaded_budget_ms: int = 10000,
     replay=False,
-    network_idle_ms: int = 10000,
+    network_idle_ms: Optional[int] = None,
     layout_stable: bool = True,
 ) -> None:
+    import os
+    if network_idle_ms is None:
+        network_idle_ms = int(os.environ.get("NETWORK_IDLE_TIMEOUT", 10000))
+    layout_stable_timeout = int(os.environ.get("LAYOUT_STABLE_TIMEOUT", 6000))
     start_t = time.time()
     try:
         await page.wait_for_load_state("domcontentloaded", timeout=60000)
         await page.wait_for_load_state("networkidle", timeout=network_idle_ms)
-        await wait_for_layout_stable(page, timeout_ms=6000)
+        await wait_for_layout_stable(page, timeout_ms=layout_stable_timeout)
     except Exception:
         print('[PlayWright Err] wait_for_load_state')
     # if not replay:

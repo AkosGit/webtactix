@@ -12,6 +12,6 @@ When this browser window opens, log into Google, solve any CAPTCHAs, and then cl
 Once the profile is primed, you can run the agent script as normal:
 ```bash
 source .venv/bin/activate && export PYTHONPATH=. 
-python3 run_real_world.py --url "https://www.facebook.com/" --intent "List all of my friends"
+python3 run_real_world.py --url "https://www.facebook.com/" --intent "List all of my friends" --network-idle-timeout 1000 --layout-stable-timeout 1000
 ```
 Because the profile wasn't wiped by the setup script, Playwright will load it up and inherit all the active logins you just performed!

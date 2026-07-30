@@ -12,7 +12,7 @@ from webtactix.agents.constraint_agent import Constraint
 from webtactix.runner.recorder import Recorder
 
 _ALLOWED_PLAN_NAMES = {"web_operation", "data_extraction", "partially_done", "go_back", "finish"}
-_ALLOWED_ACTIONS = {"click", "input", "select", "press_enter", "goto", "scroll", "hover"}
+_ALLOWED_ACTIONS = {"click", "input", "select", "press_enter", "goto", "scroll", "hover", "scroll_down_n_times", "scroll_n_times"}
 
 TIPS = '''
 - Date format in shopping-admin: **Month/Day/YYYY** (e.g., "1/31/2024").\n
@@ -57,6 +57,8 @@ def _parse_action_type(s: str) -> Optional[ActionType]:
         return ActionType.GOTO
     if s in {"scroll"}:
         return ActionType.SCROLL
+    if s.startswith("scroll_down_n_times") or s.startswith("scroll_n_times"):
+        return ActionType.SCROLL_N_TIMES
     if s in {"hover"}:
         return ActionType.HOVER
     return None
@@ -264,15 +266,23 @@ class PlannerAgent:
                         continue
 
                     act_s = str(st2.get("action") or "").strip().lower()
-                    if act_s not in _ALLOWED_ACTIONS:
+                    
+                    a = _parse_action_type(act_s)
+                    
+                    if a is None:
                         if act_s == "wait":
                             print("[PLANNER] WAIT 30s")
                             await asyncio.sleep(30)
                         continue
+                    
+                    if a == ActionType.SCROLL_N_TIMES:
+                        import re
+                        m = re.search(r'\((\d+)\)', act_s)
+                        if m:
+                            st2["text"] = m.group(1)
+                        elif not st2.get("text"):
+                            st2["text"] = "1"
 
-                    a = _parse_action_type(act_s)
-                    if a is None:
-                        continue
 
                     idx_raw = st2.get("index", None)
 

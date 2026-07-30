@@ -138,16 +138,20 @@ async def run_task(task: TaskSpec, cdp_url: str):
     
     runner = ExperimentRunner(sess=sess, tree=tree, planner=planner, decision=decision, task=task, rec=rec)
     
+    import time
+    start_time = time.time()
     res = await runner.run(
         start_url=task.start_url,
         storage_state=None,
         geolocation=None,
     )
+    elapsed_time = time.time() - start_time
     
     print("\n================= [TASK RESULT] =================")
     print(f"task_id: {task.task_id}")
     print(f"status:  {res.status}")
     print(f"answer:  {res.answer}")
+    print(f"time:    {elapsed_time:.2f} seconds")
     print("=================================================\n")
     return res
 
@@ -156,10 +160,15 @@ async def main():
     parser = argparse.ArgumentParser(description="Run WebTactix real-world tasks.")
     parser.add_argument("--url", type=str, help="The starting URL for the custom task.")
     parser.add_argument("--intent", type=str, help="The task description/intent.")
+    parser.add_argument("--network-idle-timeout", type=int, default=10000, help="Timeout in ms for network idle (default: 10000)")
+    parser.add_argument("--layout-stable-timeout", type=int, default=6000, help="Timeout in ms for layout stability (default: 6000)")
     args = parser.parse_args()
 
     import subprocess
     import os
+    
+    os.environ["NETWORK_IDLE_TIMEOUT"] = str(args.network_idle_timeout)
+    os.environ["LAYOUT_STABLE_TIMEOUT"] = str(args.layout_stable_timeout)
     
     # Run the setup script to clone the profile
     script_path = os.path.join(os.path.dirname(__file__), "setup_profile.sh")
